@@ -1,16 +1,9 @@
-//TCS3200 Pins
-// S0  Pin 4
-// S1  Pin 5
-// S2  Pin 6
-// S3  Pin 7
-// OUT Pin 2  
+unsigned int period;
+volatile unsigned int timeVal;
 
-// Global
-volatile unsigned int timeVal = 0;
-unsigned int period = 0;
+#define BLUE_THRESHOLD    650
+#define YELLOW_THRESHOLD  1000
 
-#define BLUE_THRESHOLD    1000
-#define YELLOW_THRESHOLD  2000
 
 typedef enum {
   START,
@@ -23,41 +16,50 @@ typedef enum {
 State state = START;
 int startColor = 0;
 
-// Interrupt
+ISR(PCINT0_vect)
+{
+  static uint8_t lastState = 0;
+  uint8_t currState = PINB & 0b00000001; // PD2
 
-ISR(PCINT2_vect){ //CHECK VECTOR PIN
-    static uint8_t lastState = 0;
-    uint8_t currState = PIND & (1 << PD2); //CHECK THIS
+  // rising edge → reset timer
+  if (currState && !lastState) {
+    TCNT1 = 0;
+  }
 
-    if (currState && !lastState) {
-        TCNT1 = 0;
-    }
-    else if (!currState && lastState) {
-        timeVal = TCNT1;
-    }
+  // falling edge → store timer value
+  else if (!currState && lastState) {
+    timeVal = TCNT1;
+  }
 
-    lastState = currState;
+  lastState = currState;
 }
 
-// Sensor setup
 void initColor()
 {
-    DDRD &= ~(1 << PD2); // OUT pin input
+  // // a. I/O setup (S0–S3 outputs, PD2 input)
+  // DDRD = 0b11110000;
 
-    PCICR |= (1 << PCIE2);      // enable PCINT for PORTD
-    PCMSK2 |= (1 << PCINT18);   // PD2 interrupt
+  // // S0 = 1, S1 = 0, S2 = 0, S3 = 0 (red filter @20%)
+  // PORTD = 0b10000000;
 
-    TCCR1A = 0;
-    TCCR1B = 0b00000001;
+  // b. Pin change interrupt setup (PORTD)
+  PCICR  = 0b00000001;   // enable PCIE2
+  PCMSK0 = 0b00000001;   // enable PD2 (PCINT18)
 
-    sei();
+  sei();
+
+  // c. Timer1 setup (no prescaler)
+  TCCR1A = 0b00000000;
+  TCCR1B = 0b00000001;
 }
 
-// Read Color
-int getColor() {
-  PCMSK2 |= (1 << PCINT18);
+int getColor()
+{
+  PCMSK0 |= 0b00000001;
   _delay_ms(10);
-  PCMSK2 &= ~(1 << PCINT18);
+  PCMSK0 &= 0b11111110;
+  Serial.print("Color: ");
+  Serial.print(timeVal);
   return timeVal;
 }
 
@@ -71,54 +73,59 @@ int classifyColor(int reading) {
   }
 }
 
-//Motor Pins
-// Right Forward   Pin 10
-// Right Backward  Pin 11
-// Left Forward    Pin 8
-// Left Backward   Pin 9
-
-// Motor Functions
-void drive_forward(int time){
-  PORTB = 0b00000101;
+//Motor Funcs
+void drive_backward(int time){
+  PORTD = 0b01010000;
   _delay_ms(time);
   stop();
-  _delay_ms(100); 
+  _delay_ms(100);
 }
 
-void drive_backward(int time){
-  PORTB = 0b00001010;
+
+void drive_forward(int time){
+  PORTD = 0b10100000;
   _delay_ms(time);
   stop();
   _delay_ms(100);  
 }
 
-void turn_right(int time){
-  PORTB = 0b00000110;
-  _delay_ms(time);
-  stop(); 
-  _delay_ms(100); 
-}
 
-void turn_left(int time){
-  PORTB = 0b00001001;
+void turn_right(int time){
+  PORTD = 0b01100000;
   _delay_ms(time);
   stop();
-  _delay_ms(100); 
+  _delay_ms(100);
 }
+
+
+void turn_left(int time){
+  PORTD = 0b10010000;
+  _delay_ms(time);
+  stop();
+  _delay_ms(100);
+}
+
 
 void stop(){
-  PORTB = 0b00000000;
+  PORTD = 0b00000000;
 }
 
 
-// MAIN
-int main(void){
-  DDRB = 0b00001111; //CHECK WIRING
+int main(void)
+{
+
+  DDRD = 0b11110000;
+
   initColor();
+  state = START;
+
+  Serial.begin(9600);
 
   while(1) {
     period = getColor();
     int currentColor = classifyColor(period);
+    
+
 
     switch(state){
       case START:
@@ -132,21 +139,27 @@ int main(void){
         }
         break;
 
+
       case FORWARD:
-        Serial.println("FORWARD");
-        drive_forward(20);
+        
 
         if (currentColor == 2) { //Black border is priority
+          Serial.println("Black Border?");
           stop();
           _delay_ms(100);
-          turn_right(470); //CHECK IF 90 DEGREES
+          turn_right(50); //CHECK IF 90 DEGREES
           state = FORWARD;
         } else if (currentColor != startColor){
+          Serial.println("Yellow?");
           stop();
           _delay_ms(400);
           state = TURN;
+        } else {
+          Serial.println("FORWARD");
+          drive_forward(20);
         }
         break;
+
 
       case TURN:
         Serial.println("TURN");
@@ -154,12 +167,18 @@ int main(void){
         state = RETURN;
         break;
 
+
       case RETURN:
         Serial.println("RETURN");
         drive_forward(300); //Drive forward a lil bit
         stop();
-        state = END;
+        if (currentColor == 2){
+          state = END;
+        } else {
+          state = RETURN;
+        }
         break;
+
 
       case END:
         Serial.println("END");
@@ -168,6 +187,8 @@ int main(void){
         break;
     }
 
+
     _delay_ms(50);
   }
+
 }
