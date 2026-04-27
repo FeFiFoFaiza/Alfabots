@@ -66,7 +66,7 @@ int getColor()
 int classifyColor(int reading) {
   if (reading <= BLUE_THRESHOLD) {
     return 0; //BLUE
-  } else if (reading <= YELLOW_THRESHOLD) {
+  } else if ((reading <= YELLOW_THRESHOLD)) {
     return 1; //YELLOW
   } else {
     return 2; //BLACK
