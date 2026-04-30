@@ -1,3 +1,11 @@
+4/29/2026
+Init Milestone 4 (hardcoded + QTI)
+CAD being done
+
+4/26/2026
+No QTI logic
+Milestone 3 done
+
 4/20/2026
 Wired QTI Sensor
 Coded Milestone 3 (no beta we die on this hill like Remus)
